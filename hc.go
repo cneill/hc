@@ -7,12 +7,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 )
 
 // Opts sets options for HC
 type Opts struct {
 	AddedHeaders http.Header
+	AddedQuery   url.Values
 	Debug        bool
 	DebugLogger  *log.Logger
 }
@@ -21,6 +23,7 @@ type Opts struct {
 func DefaultOpts() *Opts {
 	return &Opts{
 		AddedHeaders: http.Header{},
+		AddedQuery:   url.Values{},
 		Debug:        false,
 		DebugLogger:  log.New(os.Stderr, "[hc] ", log.Ldate|log.Ltime),
 	}
@@ -63,6 +66,17 @@ func New(opts *Opts) *HC {
 	}
 }
 
+// AddQueryValues adds url.Values to the URL included in an *http.Request object
+func AddQueryValues(req *http.Request, values url.Values) {
+	q := req.URL.Query()
+	for queryParam, vals := range values {
+		for _, val := range vals {
+			q.Add(queryParam, val)
+		}
+	}
+	req.URL.RawQuery = q.Encode()
+}
+
 // Do executes an HTTP request
 func (h *HC) Do(req *http.Request) (*http.Response, error) {
 	for header, values := range h.Opts.AddedHeaders {
@@ -70,6 +84,8 @@ func (h *HC) Do(req *http.Request) (*http.Response, error) {
 			req.Header.Add(header, val)
 		}
 	}
+
+	AddQueryValues(req, h.Opts.AddedQuery)
 
 	if h.Opts.Debug {
 		h.Opts.DebugLogger.Printf("%s %s\n", req.Method, req.URL.String())
@@ -79,8 +95,8 @@ func (h *HC) Do(req *http.Request) (*http.Response, error) {
 }
 
 // DoJSON performs an HTTP request and decodes the response body into the "response" object provided
-func (h *HC) DoJSON(request *http.Request, responseObject interface{}) error {
-	resp, err := h.Do(request)
+func (h *HC) DoJSON(req *http.Request, responseObject interface{}) error {
+	resp, err := h.Do(req)
 	if err != nil {
 		return err
 	} else if resp.Body == nil {
