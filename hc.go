@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 )
 
 // Opts sets options for HC
@@ -174,7 +175,9 @@ func (h *HC) readStream(stream io.ReadCloser, events chan string) {
 				break
 			}
 
-			events <- string(line)
+			if str := strings.TrimSpace(string(line)); str != "" {
+				events <- str
+			}
 		}
 	}
 }
