@@ -1,6 +1,7 @@
 package hc
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -137,4 +138,43 @@ func (h *HC) PostJSON(URL string, bodyObject, responseObject interface{}) error 
 	req.Header.Add("Content-Type", "application/json")
 
 	return h.DoJSON(req, responseObject)
+}
+
+// GetStream can be asynchronously called with a goroutine to get events from a "text/event-stream" endpoint delivered on a channel
+func (h *HC) GetStream(URL string, events chan string) error {
+	req, err := http.NewRequest(http.MethodGet, URL, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("Accept", "text/event-stream")
+
+	resp, err := h.Do(req)
+	if err != nil {
+		return err
+	}
+
+	go h.readStream(resp.Body, events)
+
+	return nil
+}
+
+func (h *HC) readStream(stream io.ReadCloser, events chan string) {
+	defer stream.Close()
+
+	r := bufio.NewReader(stream)
+	for {
+		select {
+		case <-events:
+			break
+		default:
+			line, err := r.ReadBytes('\n')
+			if err == io.EOF {
+				close(events)
+				break
+			}
+
+			events <- string(line)
+		}
+	}
 }
