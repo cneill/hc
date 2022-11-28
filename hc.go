@@ -17,6 +17,7 @@ import (
 type Opts struct {
 	AddedHeaders http.Header
 	AddedQuery   url.Values
+	AppendSlash  bool
 	Debug        bool
 	DebugLogger  *log.Logger
 }
@@ -68,15 +69,60 @@ func New(opts *Opts) *HC {
 	}
 }
 
-// AddQueryValues adds url.Values to the URL included in an *http.Request object
-func AddQueryValues(req *http.Request, values url.Values) {
-	q := req.URL.Query()
-	for queryParam, vals := range values {
-		for _, val := range vals {
-			q.Add(queryParam, val)
+// PrepareURL adds 'values' to the query string of 'URL', appends a "/" if requested, returns error if invalid.
+func (h *HC) PrepareURL(URL string, values url.Values) (*url.URL, error) {
+	// if requested, append a "/" to the URL if one isn't already present
+	if h.Opts.AppendSlash {
+		if idx := strings.IndexAny(URL, "?&"); idx != -1 {
+			if URL[idx-1] != '/' {
+				URL = URL[0:idx] + "/" + URL[idx:]
+			}
+		} else if !strings.HasSuffix(URL, "/") {
+			URL += "/"
 		}
 	}
-	req.URL.RawQuery = q.Encode()
+
+	parsed, err := url.Parse(URL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse provided URL %q: %w", URL, err)
+	}
+
+	// append query strings to URL
+	query := parsed.Query()
+	for key, vals := range values {
+		for _, val := range vals {
+			query.Add(key, val)
+		}
+	}
+
+	parsed.RawQuery = query.Encode()
+
+	return parsed, nil
+}
+
+func (h *HC) simpleRequest(method, URL string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, URL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return h.Do(req)
+}
+
+func (h *HC) Delete(URL string) (*http.Response, error) {
+	return h.simpleRequest(http.MethodDelete, URL, nil)
+}
+
+func (h *HC) Get(URL string) (*http.Response, error) {
+	return h.simpleRequest(http.MethodGet, URL, nil)
+}
+
+func (h *HC) Post(URL string, body io.Reader) (*http.Response, error) {
+	return h.simpleRequest(http.MethodPost, URL, body)
+}
+
+func (h *HC) Put(URL string, body io.Reader) (*http.Response, error) {
+	return h.simpleRequest(http.MethodPut, URL, body)
 }
 
 // Do executes an HTTP request
@@ -87,7 +133,12 @@ func (h *HC) Do(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	AddQueryValues(req, h.Opts.AddedQuery)
+	newURL, err := h.PrepareURL(req.URL.String(), h.Opts.AddedQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare URL to execute HTTP Request: %w", err)
+	}
+
+	req.URL = newURL
 
 	if h.Opts.Debug {
 		h.Opts.DebugLogger.Printf("%s %s\n", req.Method, req.URL.String())
@@ -97,7 +148,7 @@ func (h *HC) Do(req *http.Request) (*http.Response, error) {
 }
 
 // DoJSON performs an HTTP request and decodes the response body into the "response" object provided
-func (h *HC) DoJSON(req *http.Request, responseObject interface{}) error {
+func (h *HC) DoJSON(req *http.Request, responseObject any) error {
 	resp, err := h.Do(req)
 	if err != nil {
 		return err
@@ -114,7 +165,7 @@ func (h *HC) DoJSON(req *http.Request, responseObject interface{}) error {
 }
 
 // GetJSON creates a simple HTTP GET request and uses DoJSON to execute it
-func (h *HC) GetJSON(URL string, responseObject interface{}) error {
+func (h *HC) GetJSON(URL string, responseObject any) error {
 	req, err := http.NewRequest(http.MethodGet, URL, nil)
 	if err != nil {
 		return err
@@ -124,7 +175,7 @@ func (h *HC) GetJSON(URL string, responseObject interface{}) error {
 }
 
 // PostJSON creates an HTTP POST request with Content-Type "application/json" and uses DoJSON to execute it
-func (h *HC) PostJSON(URL string, bodyObject, responseObject interface{}) error {
+func (h *HC) PostJSON(URL string, bodyObject, responseObject any) error {
 	r, w := io.Pipe()
 	defer r.Close()
 	defer w.Close()
