@@ -11,6 +11,14 @@ type testStringer struct{}
 
 func (t testStringer) String() string { return "string" }
 
+type EmbeddedTest struct {
+	EmbeddedTest string `url:"embedded_test"`
+}
+
+type anonymousTest struct {
+	AnonymousTest string `url:"anonymous_test"`
+}
+
 func TestURLValuesFromStruct(t *testing.T) {
 	t.Parallel()
 
@@ -63,7 +71,7 @@ func TestURLValuesFromStruct(t *testing.T) {
 		},
 		{
 			struct {
-				OmitEmptyUnpopulatedTest *testStringer `url:"omitempty_nil_test,omitempty"`
+				OmitEmptyNilTest *testStringer `url:"omitempty_nil_test,omitempty"`
 			}{nil},
 			"omitempty_nil_test",
 			[]string{},
@@ -96,6 +104,28 @@ func TestURLValuesFromStruct(t *testing.T) {
 			"stringer_pointer_test",
 			[]string{"string"},
 		},
+		{
+			struct {
+				unexportedTest string `url:"unexported_test"`
+			}{"string"},
+			"unexported_test",
+			[]string{},
+		},
+		{
+			struct {
+				EmbeddedTest
+			}{EmbeddedTest{"string"}},
+			"embedded_test",
+			[]string{"string"},
+		},
+		{
+			struct {
+				anonymousTest
+			}{anonymousTest{"string"}},
+			"anonymous_test",
+			[]string{},
+		},
+
 		/*
 			TODO?
 			{

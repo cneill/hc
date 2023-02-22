@@ -19,13 +19,10 @@ var (
 //     the field entirely
 //   - `url_val_sep:"<separator string>"` -- if the field is a slice, each value will be included in the specified url.Values
 //     key as a single string joined by the separator; otherwise, error
+//
+// It will also parse values from embedded structs that follow the same rules.
 func URLValuesFromStruct(input any) (url.Values, error) {
 	results := url.Values{}
-	// is this a struct
-	// struct tags
-	// check "omitempty" / "-"
-	// marshal based on type
-
 	inputType := reflect.TypeOf(input)
 	inputValue := reflect.ValueOf(input)
 
@@ -44,8 +41,29 @@ func URLValuesFromStruct(input any) (url.Values, error) {
 		fieldType := inputType.Field(i)
 		fieldValue := inputValue.Field(i)
 
+		// check embedded structs for variables to include
+		if fieldType.IsExported() && fieldType.Type.Kind() == reflect.Struct && fieldType.Anonymous {
+			raw := fieldValue.Interface()
+			embeddedValues, err := URLValuesFromStruct(raw)
+			if err != nil {
+				return results, fmt.Errorf("failed to get embedded values from struct %q: %w", fieldType.Name, err)
+			}
+
+			for key, values := range embeddedValues {
+				for _, value := range values {
+					results.Add(key, value)
+				}
+			}
+
+			continue
+		}
+
 		if !fieldType.IsExported() {
 			continue
+		}
+
+		if fieldValue.Kind() == reflect.Ptr {
+			fieldValue = fieldValue.Elem()
 		}
 
 		details, err := getURLTagDetails(fieldType, fieldValue)
@@ -105,8 +123,15 @@ func getURLTagDetails(sf reflect.StructField, val reflect.Value) (urlTagDetails,
 		result.Key = tagFields[0]
 	}
 
-	if result.OmitEmpty && val.IsZero() {
-		return result, nil
+	// check for a zero-valued reflect.Value or IsZero
+	if result.OmitEmpty {
+		if val == (reflect.Value{}) {
+			return result, nil
+		}
+
+		if val.IsZero() {
+			return result, nil
+		}
 	}
 
 	stringValues, err := getStringValues(sf, val)
