@@ -148,8 +148,23 @@ func getStringValues(sf reflect.StructField, val reflect.Value) ([]string, error
 		values = append(values, fmt.Sprintf("%d", val.Int()))
 	case reflect.Float32, reflect.Float64:
 		values = append(values, fmt.Sprintf("%.2f", val.Float()))
+	// case reflect.Ptr:
+	// return getStringValues(sf, val.Elem())
 	default:
-		return results, fmt.Errorf("%q is an invalid type for a URL value", sf.Type)
+		invalid := true
+
+		if val.CanInterface() {
+			raw := val.Interface()
+
+			if s, ok := raw.(fmt.Stringer); ok {
+				values = append(values, s.String())
+				invalid = false
+			}
+		}
+
+		if invalid {
+			return results, fmt.Errorf("%q is an invalid type for a URL value", sf.Type)
+		}
 	}
 
 	if separator != "" {

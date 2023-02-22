@@ -1,59 +1,129 @@
 package hc_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cneill/hc"
 )
 
-type testStruct1 struct {
-	Name             string    `url:"name"`
-	ID               int       `url:"id"`
-	Populated        bool      `url:"populated"`
-	Omitted          string    `url:"-"`
-	OmittedSometimes string    `url:"sometimes,omitempty"`
-	MultiSlice       []string  `url:"multi_slice"`
-	MultiArray       [3]string `url:"multi_array"`
-	SepSlice         []string  `url:"sep_slice" url_val_sep:";"`
-}
+type testStringer struct{}
+
+func (t testStringer) String() string { return "string" }
 
 func TestURLValuesFromStruct(t *testing.T) {
 	t.Parallel()
 
-	s := testStruct1{
-		Name:       "test",
-		ID:         1,
-		Populated:  true,
-		Omitted:    "omitted_value",
-		MultiSlice: []string{"one", "two", "three"},
-		MultiArray: [3]string{"one", "two", "three"},
-		SepSlice:   []string{"one", "two", "three"},
+	tests := []struct {
+		input    any      // struct with variable definitions
+		name     string   // name of the url.Values key to check
+		expected []string // expected string values for that key
+	}{
+		{
+			struct {
+				StringTest string `url:"string_test"`
+			}{"string"},
+			"string_test",
+			[]string{"string"},
+		},
+		{
+			struct {
+				IntTest int `url:"int_test"`
+			}{123},
+			"int_test",
+			[]string{"123"},
+		},
+		{
+			struct {
+				BoolTest bool `url:"bool_test"`
+			}{false},
+			"bool_test",
+			[]string{"false"},
+		},
+		{
+			struct {
+				OmitNameTest string `url:"-"`
+			}{"string"},
+			"omit_name_test",
+			[]string{},
+		},
+		{
+			struct {
+				OmitEmptyTest string `url:"omit_empty_test,omitempty"`
+			}{"string"},
+			"omit_empty_test",
+			[]string{"string"},
+		},
+		{
+			struct {
+				OmitEmptyTest string `url:"omit_empty_test2,omitempty"`
+			}{},
+			"omit_empty_test2",
+			[]string{},
+		},
+		{
+			struct {
+				MultiSliceTest []string `url:"multi_slice_test"`
+			}{[]string{"1", "2", "3"}},
+			"multi_slice_test",
+			[]string{"1", "2", "3"},
+		},
+		{
+			struct {
+				ValSepSliceTest []string `url:"val_sep_slice_test" url_val_sep:";"`
+			}{[]string{"1", "2", "3"}},
+			"val_sep_slice_test",
+			[]string{"1;2;3"},
+		},
+		{
+			struct {
+				StringerTest testStringer `url:"stringer_test"`
+			}{testStringer{}},
+			"stringer_test",
+			[]string{"string"},
+		},
+		{
+			struct {
+				StringerPointerTest *testStringer `url:"stringer_pointer_test"`
+			}{&testStringer{}},
+			"stringer_pointer_test",
+			[]string{"string"},
+		},
+		/*
+			TODO?
+			{
+				struct {
+					MultiArrayTest []string `url:"multi_array_test"`
+				}{[3]string{"1", "2", "3"}},
+				"multi_slice_test",
+				[]string{"1", "2", "3"},
+			},
+		*/
 	}
 
-	values, err := hc.URLValuesFromStruct(s)
-	if err != nil {
-		t.Fatalf("failed to get values for struct: %v", err)
-	}
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d-%s", i, test.name), func(t *testing.T) {
+			values, err := hc.URLValuesFromStruct(test.input)
+			if err != nil {
+				t.Fatalf("failed to get values for struct: %v", err)
+			}
 
-	if name := values.Get("name"); name != "test" {
-		t.Errorf("'name' was '%s', expecting 'test'", name)
-	} else if id := values.Get("id"); id != "1" {
-		t.Errorf("'id' was '%s', expecting '1'", id)
-	} else if populated := values.Get("populated"); populated != "true" {
-		t.Errorf("'populated' was '%s', expecting 'true'", populated)
-	} else if ms := values["multi_slice"]; len(ms) != 3 {
-		t.Errorf("'multi_slice' had %d elements, expecting 3", len(ms))
-	} else if ms[0] != "one" || ms[1] != "two" || ms[2] != "three" {
-		t.Errorf("'multi_slice' was %v, expecting 'one', 'two', 'three'", ms)
-	} else if ma := values["multi_array"]; len(ma) != 3 {
-		t.Errorf("'multi_array' had %d elements, expecting 3", len(ma))
-	} else if ma[0] != "one" || ma[1] != "two" || ma[2] != "three" {
-		t.Errorf("'multi_slice' was %v, expecting 'one', 'two', 'three'", ms)
-	} else if ss := values["sep_slice"]; len(ss) > 1 {
-		t.Errorf("'sep_slice' had %d elements, expecting 1", len(ss))
-	} else if ss[0] != "one;two;three" {
-		t.Errorf("'sep_slice' had value '%s', expecting 'one;two;three'", ss[0])
-	} else if len(values) > 6 {
-		t.Errorf("received an omitted field... %+v", values)
+			thisVal, ok := values[test.name]
+			if !ok {
+				if n := len(test.expected); n > 0 {
+					t.Errorf("no values for that key, expected %d", n)
+				}
+			} else {
+				if len(thisVal) != len(test.expected) {
+					t.Errorf("expected %d values, got %d", len(test.expected), len(values))
+				}
+
+				for i := 0; i < len(test.expected); i++ {
+					if thisVal[i] != test.expected[i] {
+						t.Errorf("expected value %d to be %s, got %s", i, test.expected[i], thisVal[i])
+					}
+				}
+			}
+		})
 	}
 }
