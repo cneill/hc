@@ -75,7 +75,9 @@ type urlTagDetails struct {
 }
 
 func getURLTagDetails(sf reflect.StructField, val reflect.Value) (urlTagDetails, error) {
-	result := urlTagDetails{}
+	result := urlTagDetails{
+		Values: []string{},
+	}
 
 	// if no "url" tag is specified, don't do anything else
 	urlTag, ok := sf.Tag.Lookup("url")
@@ -103,6 +105,10 @@ func getURLTagDetails(sf reflect.StructField, val reflect.Value) (urlTagDetails,
 		result.Key = tagFields[0]
 	}
 
+	if result.OmitEmpty && val.IsZero() {
+		return result, nil
+	}
+
 	stringValues, err := getStringValues(sf, val)
 	if err != nil {
 		return result, fmt.Errorf("failed to marshal values of field %q: %w", result.Key, err)
@@ -127,29 +133,25 @@ func getURLTagDetails(sf reflect.StructField, val reflect.Value) (urlTagDetails,
 }
 
 func getStringValues(sf reflect.StructField, val reflect.Value) ([]string, error) {
-	results := []string{}
-
-	separator := sf.Tag.Get("url_val_sep")
-
-	values := []string{}
+	initialValues := []string{}
 
 	kind := sf.Type.Kind()
 	switch kind {
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < val.Len(); i++ {
 			iVal := val.Index(i)
-			values = append(values, iVal.String())
+			initialValues = append(initialValues, iVal.String())
 		}
 	case reflect.String:
-		values = append(values, val.String())
+		initialValues = append(initialValues, val.String())
 	case reflect.Bool:
-		values = append(values, fmt.Sprintf("%t", val.Bool()))
+		initialValues = append(initialValues, fmt.Sprintf("%t", val.Bool()))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		values = append(values, fmt.Sprintf("%d", val.Int()))
+		initialValues = append(initialValues, fmt.Sprintf("%d", val.Int()))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		initialValues = append(initialValues, fmt.Sprintf("%d", val.Uint()))
 	case reflect.Float32, reflect.Float64:
-		values = append(values, fmt.Sprintf("%.2f", val.Float()))
-	// case reflect.Ptr:
-	// return getStringValues(sf, val.Elem())
+		initialValues = append(initialValues, fmt.Sprintf("%.2f", val.Float()))
 	default:
 		invalid := true
 
@@ -157,21 +159,19 @@ func getStringValues(sf reflect.StructField, val reflect.Value) ([]string, error
 			raw := val.Interface()
 
 			if s, ok := raw.(fmt.Stringer); ok {
-				values = append(values, s.String())
+				initialValues = append(initialValues, s.String())
 				invalid = false
 			}
 		}
 
 		if invalid {
-			return results, fmt.Errorf("%q is an invalid type for a URL value", sf.Type)
+			return []string{}, fmt.Errorf("%q is an invalid type for a URL value", sf.Type)
 		}
 	}
 
-	if separator != "" {
-		results = append(results, strings.Join(values, separator))
-	} else {
-		results = values
+	if separator := sf.Tag.Get("url_val_sep"); separator != "" {
+		return []string{strings.Join(initialValues, separator)}, nil
 	}
 
-	return results, nil
+	return initialValues, nil
 }

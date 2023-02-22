@@ -49,16 +49,23 @@ func TestURLValuesFromStruct(t *testing.T) {
 		},
 		{
 			struct {
-				OmitEmptyTest string `url:"omit_empty_test,omitempty"`
+				OmitEmptyPopulatedTest string `url:"omitempty_populated_test,omitempty"`
 			}{"string"},
-			"omit_empty_test",
+			"omitempty_populated_test",
 			[]string{"string"},
 		},
 		{
 			struct {
-				OmitEmptyTest string `url:"omit_empty_test2,omitempty"`
+				OmitEmptyUnpopulatedTest string `url:"omitempty_unpopulated_test,omitempty"`
 			}{},
-			"omit_empty_test2",
+			"omitempty_unpopulated_test",
+			[]string{},
+		},
+		{
+			struct {
+				OmitEmptyUnpopulatedTest *testStringer `url:"omitempty_nil_test,omitempty"`
+			}{nil},
+			"omitempty_nil_test",
 			[]string{},
 		},
 		{
