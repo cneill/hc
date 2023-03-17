@@ -15,11 +15,13 @@ import (
 
 // Opts sets options for HC
 type Opts struct {
-	AddedHeaders http.Header
-	AddedQuery   url.Values
-	AppendSlash  bool
-	Debug        bool
-	DebugLogger  *log.Logger
+	AddedHeaders  http.Header
+	AddedQuery    url.Values
+	AppendSlash   bool
+	BasicAuthUser string
+	BasicAuthPass string
+	Debug         bool
+	DebugLogger   *log.Logger
 }
 
 // DefaultOpts returns a reasonable Opts object for general use
@@ -104,6 +106,10 @@ func (h *HC) simpleRequest(method, URL string, body io.Reader) (*http.Response, 
 	req, err := http.NewRequest(method, URL, body)
 	if err != nil {
 		return nil, err
+	}
+
+	if h.Opts.BasicAuthUser != "" && h.Opts.BasicAuthPass != "" {
+		req.SetBasicAuth(h.Opts.BasicAuthUser, h.Opts.BasicAuthPass)
 	}
 
 	return h.Do(req)
