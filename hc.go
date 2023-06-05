@@ -72,7 +72,7 @@ func New(opts *Opts) *HC {
 }
 
 // PrepareURL adds 'values' to the query string of 'URL', appends a "/" if requested, returns error if invalid.
-func (h *HC) PrepareURL(URL string, values url.Values) (*url.URL, error) {
+func (h *HC) PrepareURL(URL string) (*url.URL, error) {
 	// if requested, append a "/" to the URL if one isn't already present
 	if h.Opts.AppendSlash {
 		if idx := strings.IndexAny(URL, "?&"); idx != -1 {
@@ -89,17 +89,42 @@ func (h *HC) PrepareURL(URL string, values url.Values) (*url.URL, error) {
 		return nil, fmt.Errorf("failed to parse provided URL %q: %w", URL, err)
 	}
 
-	// append query strings to URL
-	query := parsed.Query()
-	for key, vals := range values {
-		for _, val := range vals {
-			query.Add(key, val)
+	// append query variables from options to URL
+	if len(h.Opts.AddedQuery) > 0 {
+		query := parsed.Query()
+		for key, vals := range h.Opts.AddedQuery {
+			for _, val := range vals {
+				query.Add(key, val)
+			}
+		}
+
+		parsed.RawQuery = query.Encode()
+
+		if parsed.Path == "" {
+			parsed.Path = "/"
 		}
 	}
 
-	parsed.RawQuery = query.Encode()
-
 	return parsed, nil
+}
+
+// PrepareRequest applies the various options configured on HC to the provided 'req'.
+func (h *HC) PrepareRequest(req *http.Request) (*http.Request, error) {
+	// add headers from options
+	for header, values := range h.Opts.AddedHeaders {
+		for _, val := range values {
+			req.Header.Add(header, val)
+		}
+	}
+
+	newURL, err := h.PrepareURL(req.URL.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare URL to execute HTTP Request: %w", err)
+	}
+
+	req.URL = newURL
+
+	return req, nil
 }
 
 func (h *HC) simpleRequest(method, URL string, body io.Reader) (*http.Response, error) {
@@ -133,18 +158,10 @@ func (h *HC) Put(URL string, body io.Reader) (*http.Response, error) {
 
 // Do executes an HTTP request
 func (h *HC) Do(req *http.Request) (*http.Response, error) {
-	for header, values := range h.Opts.AddedHeaders {
-		for _, val := range values {
-			req.Header.Add(header, val)
-		}
-	}
-
-	newURL, err := h.PrepareURL(req.URL.String(), h.Opts.AddedQuery)
+	req, err := h.PrepareRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare URL to execute HTTP Request: %w", err)
+		return nil, fmt.Errorf("failed to prepare request: %w", err)
 	}
-
-	req.URL = newURL
 
 	if h.Opts.Debug {
 		h.Opts.DebugLogger.Printf("%s %s\n", req.Method, req.URL.String())
@@ -165,7 +182,9 @@ func (h *HC) DoJSON(req *http.Request, responseObject any) error {
 
 	defer resp.Body.Close()
 	d := json.NewDecoder(resp.Body)
-	d.Decode(responseObject)
+	if err := d.Decode(responseObject); err != nil {
+		return fmt.Errorf("hc: failed to decode response object: %w", err)
+	}
 
 	return nil
 }
@@ -187,7 +206,9 @@ func (h *HC) PostJSON(URL string, bodyObject, responseObject any) error {
 	defer w.Close()
 
 	e := json.NewEncoder(w)
-	e.Encode(bodyObject)
+	if err := e.Encode(bodyObject); err != nil {
+		return fmt.Errorf("hc: failed to encode body object: %w", err)
+	}
 
 	req, err := http.NewRequest(http.MethodPost, URL, r)
 	if err != nil {
