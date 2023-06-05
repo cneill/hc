@@ -2,6 +2,7 @@ package hc
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -171,7 +172,7 @@ func (h *HC) Do(req *http.Request) (*http.Response, error) {
 }
 
 // DoJSON performs an HTTP request and decodes the response body into the "response" object provided
-func (h *HC) DoJSON(req *http.Request, responseObject any) error {
+func (h *HC) DoJSON(req *http.Request, response any) error {
 	resp, err := h.Do(req)
 	if err != nil {
 		return err
@@ -182,7 +183,7 @@ func (h *HC) DoJSON(req *http.Request, responseObject any) error {
 
 	defer resp.Body.Close()
 	d := json.NewDecoder(resp.Body)
-	if err := d.Decode(responseObject); err != nil {
+	if err := d.Decode(response); err != nil {
 		return fmt.Errorf("hc: failed to decode response object: %w", err)
 	}
 
@@ -190,33 +191,30 @@ func (h *HC) DoJSON(req *http.Request, responseObject any) error {
 }
 
 // GetJSON creates a simple HTTP GET request and uses DoJSON to execute it
-func (h *HC) GetJSON(URL string, responseObject any) error {
+func (h *HC) GetJSON(URL string, response any) error {
 	req, err := http.NewRequest(http.MethodGet, URL, nil)
 	if err != nil {
 		return err
 	}
 
-	return h.DoJSON(req, responseObject)
+	return h.DoJSON(req, response)
 }
 
 // PostJSON creates an HTTP POST request with Content-Type "application/json" and uses DoJSON to execute it
-func (h *HC) PostJSON(URL string, bodyObject, responseObject any) error {
-	r, w := io.Pipe()
-	defer r.Close()
-	defer w.Close()
-
-	e := json.NewEncoder(w)
-	if err := e.Encode(bodyObject); err != nil {
-		return fmt.Errorf("hc: failed to encode body object: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, URL, r)
+func (h *HC) PostJSON(URL string, body, response any) error {
+	bodyContents, err := json.Marshal(body)
 	if err != nil {
-		return err
+		return fmt.Errorf("hc: failed to marshal request body: %w", err)
 	}
+
+	req, err := http.NewRequest(http.MethodPost, URL, bytes.NewReader(bodyContents))
+	if err != nil {
+		return fmt.Errorf("hc: failed to create request object: %w", err)
+	}
+
 	req.Header.Add("Content-Type", "application/json")
 
-	return h.DoJSON(req, responseObject)
+	return h.DoJSON(req, response)
 }
 
 // GetStream can be asynchronously called with a goroutine to get events from a "text/event-stream" endpoint delivered on a channel
