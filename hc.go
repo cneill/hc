@@ -23,6 +23,7 @@ type Opts struct {
 	BasicAuthPass string
 	Debug         bool
 	DebugLogger   *log.Logger
+	UserAgent     string
 }
 
 // DefaultOpts returns a reasonable Opts object for general use
@@ -64,6 +65,10 @@ func New(opts *Opts) *HC {
 				},
 			},
 		},
+	}
+
+	if opts.UserAgent != "" {
+		opts.AddedHeaders.Set("User-Agent", opts.UserAgent)
 	}
 
 	return &HC{
@@ -114,7 +119,7 @@ func (h *HC) PrepareRequest(req *http.Request) (*http.Request, error) {
 	// add headers from options
 	for header, values := range h.Opts.AddedHeaders {
 		for _, val := range values {
-			req.Header.Add(header, val)
+			req.Header.Set(header, val)
 		}
 	}
 
