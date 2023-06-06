@@ -180,7 +180,7 @@ func getStringValues(sf reflect.StructField, val reflect.Value) ([]string, error
 	default:
 		invalid := true
 
-		if !val.IsZero() && !val.IsNil && val.CanInterface() {
+		if !val.IsZero() && !val.IsNil() && val.CanInterface() {
 			raw := val.Interface()
 
 			if s, ok := raw.(fmt.Stringer); ok {
