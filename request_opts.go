@@ -15,14 +15,16 @@ type RequestOpt func(*http.Request) (*http.Request, error)
 
 type RequestOpts []RequestOpt
 
-func Combine(opts ...RequestOpt) RequestOpt {
+func Merge(opts ...RequestOpt) RequestOpt {
 	return func(request *http.Request) (*http.Request, error) {
 		var err error
 
-		for _, opt := range opts {
+		for i, opt := range opts {
 			request, err = opt(request)
 			if err != nil {
-				return nil, fmt.Errorf("opt error: %w", err)
+				// TODO: would be nice to unroll this "combined" set of options so that NewRequest can avoid referring
+				// to this function as an independent RequestOption, but rather a set of options
+				return nil, fmt.Errorf("Merge opt %d: %w", i+1, err)
 			}
 		}
 
@@ -86,9 +88,9 @@ func Trace(request *http.Request) (*http.Request, error) {
 	return request, nil
 }
 
-func UserAgent(userAgent string) RequestOpt {
+func Header(key, value string) RequestOpt {
 	return func(request *http.Request) (*http.Request, error) {
-		request.Header.Add("User-Agent", userAgent)
+		request.Header.Add(key, value)
 		return request, nil
 	}
 }
@@ -140,20 +142,24 @@ func Path(path string) RequestOpt {
 
 func Query(key string, value any) RequestOpt {
 	return func(request *http.Request) (*http.Request, error) {
+		if request.URL == nil {
+			return nil, fmt.Errorf("Query: must set URL first")
+		}
+
 		values := url.Values{}
 
 		if request.URL.RawQuery != "" {
 			existingValues, err := url.ParseQuery(request.URL.RawQuery)
 			if err != nil {
-				return nil, fmt.Errorf("QueryVar: %w", err)
+				return nil, fmt.Errorf("Query: %w", err)
 			}
 
 			values = existingValues
 		}
 
-		stringValue, err := valueToString(value)
+		stringValue, err := ValueToString(value)
 		if err != nil {
-			return nil, fmt.Errorf("QueryVar: %w", err)
+			return nil, fmt.Errorf("Query: %w", err)
 		}
 
 		values.Add(key, stringValue)
@@ -164,7 +170,7 @@ func Query(key string, value any) RequestOpt {
 	}
 }
 
-func valueToString(value any) (string, error) { //nolint:cyclop,funlen //Stupid type assertions...
+func ValueToString(value any) (string, error) { //nolint:cyclop,funlen //Stupid type assertions...
 	var (
 		result    string
 		converted bool
@@ -215,19 +221,14 @@ func valueToString(value any) (string, error) { //nolint:cyclop,funlen //Stupid 
 		converted = true
 	}
 
-	if stringer, ok := value.(fmt.Stringer); ok {
-		result = stringer.String()
-		converted = true
-	}
-
 	if converted {
 		return result, nil
 	}
 
-	return fancyToString(value)
+	return FancyToString(value)
 }
 
-func fancyToString(value any) (string, error) {
+func FancyToString(value any) (string, error) {
 	if stringer, ok := value.(fmt.Stringer); ok {
 		return stringer.String(), nil
 	}
