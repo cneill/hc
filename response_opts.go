@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 )
 
 type ResponseOpt func(response *http.Response) (*http.Response, error)
@@ -70,6 +71,38 @@ func AllowedStatusCodes(statusCodes ...int) ResponseOpt {
 			return nil, StatusCodeError{
 				StatusCode: response.StatusCode,
 				Status:     response.Status,
+			}
+		}
+
+		return response, nil
+	}
+}
+
+type MaxContentLengthError struct {
+	MaxLength     int64
+	ContentLength int64
+}
+
+func (m MaxContentLengthError) Error() string {
+	return fmt.Sprintf("content length %d exceeded max length %d", m.ContentLength, m.MaxLength)
+}
+
+func MaxContentLength(maxLength int64) ResponseOpt {
+	return func(response *http.Response) (*http.Response, error) {
+		lengthRaw := response.Header.Get("Content-Length")
+		if lengthRaw == "" {
+			return nil, fmt.Errorf("no Content-Length header on response")
+		}
+
+		length, err := strconv.ParseInt(lengthRaw, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Content-Length header %q: %w", lengthRaw, err)
+		}
+
+		if maxLength < length {
+			return nil, MaxContentLengthError{
+				MaxLength:     maxLength,
+				ContentLength: length,
 			}
 		}
 
