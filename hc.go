@@ -5,12 +5,17 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
+	"time"
 )
 
 func DefaultClient() *http.Client {
 	return &http.Client{
+		Timeout: time.Second * 10,
 		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
+			Proxy:                 http.ProxyFromEnvironment,
+			IdleConnTimeout:       time.Second * 5,
+			ResponseHeaderTimeout: time.Second * 5,
 			TLSClientConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 				MaxVersion: tls.VersionTLS13,
@@ -83,4 +88,88 @@ func Do(client *http.Client, opts ...RequestOpt) (*http.Response, error) {
 	}
 
 	return resp, nil
+}
+
+type (
+	ClientOpt  func(hc *HC) (*HC, error)
+	ClientOpts []ClientOpt
+)
+
+type HC struct {
+	client       *http.Client
+	rateLimiter  *time.Ticker
+	addedHeaders http.Header
+	baseURL      string
+}
+
+func New(client *http.Client, opts ...ClientOpt) (*HC, error) {
+	hc := &HC{
+		client: client,
+	}
+
+	var optErr error
+	for i, opt := range opts {
+		hc, optErr = opt(hc)
+		if optErr != nil {
+			return nil, fmt.Errorf("opt %d: %w", i+1, optErr)
+		}
+	}
+
+	return hc, nil
+}
+
+func (h *HC) Do(opts ...RequestOpt) (*http.Response, error) {
+	if h.rateLimiter != nil {
+		<-h.rateLimiter.C
+	}
+
+	allOpts := RequestOpts{}
+
+	if h.addedHeaders != nil {
+		for name, vals := range h.addedHeaders {
+			for _, val := range vals {
+				allOpts = append(allOpts, Header(name, val))
+			}
+		}
+	}
+
+	if h.baseURL != "" {
+		allOpts = append(allOpts, BaseURL(h.baseURL))
+	}
+
+	allOpts = append(allOpts, opts...)
+
+	req, err := NewRequest(allOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	return h.client.Do(req)
+}
+
+func ClientBaseURL(base string) ClientOpt {
+	return func(hc *HC) (*HC, error) {
+		_, err := url.Parse(base)
+		if err != nil {
+			return nil, fmt.Errorf("ClientBaseURL: failed to parse URL: %w", err)
+		}
+
+		hc.baseURL = base
+
+		return hc, nil
+	}
+}
+
+func RateTickerDuration(duration time.Duration) ClientOpt {
+	return func(hc *HC) (*HC, error) {
+		hc.rateLimiter = time.NewTicker(duration)
+		return hc, nil
+	}
+}
+
+func GlobalHeaders(headers http.Header) ClientOpt {
+	return func(hc *HC) (*HC, error) {
+		hc.addedHeaders = headers
+		return hc, nil
+	}
 }
