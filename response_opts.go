@@ -56,15 +56,6 @@ var Status2XX = []int{
 	http.StatusIMUsed,
 }
 
-type StatusCodeError struct {
-	StatusCode int
-	Status     string
-}
-
-func (s StatusCodeError) Error() string {
-	return fmt.Sprintf("status code: %d, message: %q", s.StatusCode, s.Status)
-}
-
 func AllowedStatusCodes(statusCodes ...int) ResponseOpt {
 	return func(response *http.Response) (*http.Response, error) {
 		if !slices.Contains(statusCodes, response.StatusCode) {
@@ -76,15 +67,6 @@ func AllowedStatusCodes(statusCodes ...int) ResponseOpt {
 
 		return response, nil
 	}
-}
-
-type MaxContentLengthError struct {
-	MaxLength     int64
-	ContentLength int64
-}
-
-func (m MaxContentLengthError) Error() string {
-	return fmt.Sprintf("content length %d exceeded max length %d", m.ContentLength, m.MaxLength)
 }
 
 func MaxContentLength(maxLength int64) ResponseOpt {
